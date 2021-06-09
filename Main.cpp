@@ -327,6 +327,12 @@ namespace Yeah {
 		Optional<int64> before_index_, after_index_;
 		std::unique_ptr<Transitions::ITransition> transition_ = TransitionFactory::Create<Transitions::CrossFade>(1s);
 	public:
+		SceneChanger() = default;
+		SceneChanger(
+			std::unique_ptr<Scenes::IScene>&& scene,
+			std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
+			change(std::move(scene), std::move(transition));
+		}
 
 		void setTransition(std::unique_ptr<Transitions::ITransition>&& transition) {
 			if (not transition) { return; }
@@ -745,8 +751,10 @@ void Main() {
 	Window::SetPos({ 1000,200 });
 	Scene::SetBackground(ColorF(0.2, 0.3, 0.4));
 	
-	Yeah::SceneChanger sc;
-	sc.change(SceneFactory::Create<Master::Title>());
+	Yeah::SceneChanger sc(
+		SceneFactory::Create<Master::Title>(),
+		TransitionFactory::Create<Yeah::Transitions::AlphaFadeIn>(1s)
+	);
 	while (System::Update()) {
 		ClearPrint();
 		if (not sc.update()) {
