@@ -14,6 +14,7 @@ namespace Yeah {
 
 			Optional<std::pair<std::unique_ptr<IScene>, std::unique_ptr<Transitions::ITransition>>> change_;
 			bool exit_ = false;
+			Optional<std::unique_ptr<Transitions::ITransition>> back_;
 		public:
 			virtual ~IScene() {}
 			virtual void update() = 0;
@@ -31,6 +32,9 @@ namespace Yeah {
 
 			void exit() {
 				exit_ = true;
+			}
+			void back(std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
+				back_ = std::move(transition);
 			}
 		};
 	}
@@ -218,14 +222,13 @@ namespace Yeah {
 	}
 
 	class SceneChanger {
-		std::unique_ptr<Scenes::IScene> before_, after_;
+		Array<std::unique_ptr<Scenes::IScene>> scenes_, poped_scenes_;
 		std::unique_ptr<Transitions::ITransition> transition_ = std::make_unique<Transitions::CrossFade>(1s);
 	public:
 		void change(std::unique_ptr<Scenes::IScene>&& next) {
 			if (not next) { return; }
 
-			before_ = std::move(after_);
-			after_ = std::move(next);
+			scenes_ << std::move(next);
 		}
 		void change(std::unique_ptr<Scenes::IScene>&& next, std::unique_ptr<Transitions::ITransition>&& transition) {
 			setTransition(std::move(transition));
@@ -237,15 +240,26 @@ namespace Yeah {
 			transition_ = std::move(transition);
 		}
 
+		void back(std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
+			setTransition(std::move(transition));
+			scenes_.pop_back();
+		}
+
 		bool update() {
 			if (transition_) {
-				transition_->update(before_, after_);
+				transition_->update(before(), after());
 			}
 
-			if (after_ && after_->change_) {
-				change(std::move(after_->change_->first), std::move(after_->change_->second));
-				before_->change_.reset();
-				after_->change_.reset();
+			if (after()){
+				if (after()->change_) {
+					change(std::move(after()->change_->first), std::move(after()->change_->second));
+					//before()->change_.reset();
+					after()->change_.reset();
+				}
+				if (after()->back_) {
+					back(std::move(*after()->back_));
+					after()->back_.reset();
+				}
 			}
 
 			if (transition_) {
@@ -254,16 +268,34 @@ namespace Yeah {
 				}
 			}
 
-			return after_ ? not after_->exit_ : true;
+			return after() ? not after()->exit_ : true;
 		}
 		void draw() const {
 			if (transition_) {
-				transition_->draw(before_, after_);
+				transition_->draw(before(), after());
 			}
 
 			Print << U"Transition:" << (transition_ ? Unicode::Widen(typeid(*transition_).name()).split(U':').back() : U"Null");
-			Print << U"Before:" << (before_ ? Unicode::Widen(typeid(*before_).name()) : U"Null");
-			Print << U"After:" << (after_ ? Unicode::Widen(typeid(*after_).name()) : U"Null");
+			Print << U"Before:" << (before() ? Unicode::Widen(typeid(*before()).name()) : U"Null");
+			Print << U"After:" << (after() ? Unicode::Widen(typeid(*after()).name()) : U"Null");
+		}
+
+	private:
+		std::unique_ptr<Yeah::Scenes::IScene>& before() {
+			static std::unique_ptr<Yeah::Scenes::IScene> nul{ nullptr };
+			return scenes_.size() >= 2 ? scenes_[scenes_.size() - 2] : nul;
+		}
+		const std::unique_ptr<Yeah::Scenes::IScene>& before() const {
+			static std::unique_ptr<Yeah::Scenes::IScene> nul{ nullptr };
+			return scenes_.size() >= 2 ? scenes_[scenes_.size() - 2] : nul;
+		}
+		std::unique_ptr<Yeah::Scenes::IScene>& after() {
+			static std::unique_ptr<Yeah::Scenes::IScene> nul{ nullptr };
+			return not scenes_.empty() ? scenes_.back() : nul;
+		}
+		const std::unique_ptr<Yeah::Scenes::IScene>& after() const {
+			static std::unique_ptr<Yeah::Scenes::IScene> nul{ nullptr };
+			return not scenes_.empty() ? scenes_.back() : nul;
 		}
 	};
 }
@@ -491,14 +523,11 @@ namespace FindShape {
 	};
 	class Answer :public Yeah::Scenes::IScene {
 		SaturatedLinework<Circle> sl_{ Circle(shapes[target_index].polygon.centroid(),50) };
-		mutable Optional<std::unique_ptr<Yeah::Scenes::IScene>> next_key_;
+		mutable std::function<void()> banana;
 	public:
 		void update() override {
-			if (next_key_) {
-				changeScene(
-					std::move(*next_key_),
-					TransitionFuctory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
-				);
+			if (banana) {
+				banana();
 			}
 		}
 		void draw() const override {
@@ -510,7 +539,9 @@ namespace FindShape {
 			sl_.draw();
 
 			if (SimpleGUI::Button(U"戻る", { 0,0 }, 70)) {
-				next_key_ = SceneFuctory::Create<Result>(false);
+				banana = [this]() mutable {
+					const_cast<Answer*>(this)->back();
+				};
 			}
 		}
 	};
