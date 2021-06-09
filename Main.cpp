@@ -592,7 +592,7 @@ namespace ConwaysGameOfLife {
 }
 
 template<typename T, typename...Arg>
-std::unique_ptr<Yeah::Scenes::IScene> SceneFuctory::Create(const Arg&...args) {
+std::unique_ptr<Yeah::Scenes::IScene> SceneFuctory::Create(Arg&&...args) {
 	return std::make_unique<T>(std::forward(args)...);
 }
 
