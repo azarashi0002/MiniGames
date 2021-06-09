@@ -25,8 +25,6 @@ namespace Yeah {
 			Optional<std::unique_ptr<Transitions::ITransition>> redo_;
 		public:
 			virtual ~IScene() {}
-			virtual void callStartFadeIn() {}	//シーンが呼ばれたとき
-			virtual void callStartFadeOut() {}	//シーンが切り替えられ消えたとき
 			virtual void update() = 0;
 			virtual void draw() const = 0;
 
@@ -271,13 +269,6 @@ namespace Yeah {
 				after_index_ = 0;
 			}
 
-			if (after()) {
-				after()->callStartFadeIn();
-			}
-			if (before()) {
-				before()->callStartFadeOut();
-			}
-
 			setTransition(std::move(transition));
 		}
 		void redo(std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
@@ -292,13 +283,6 @@ namespace Yeah {
 				assert(false);
 			}
 
-			if (after()) {
-				after()->callStartFadeIn();
-			}
-			if (before()) {
-				before()->callStartFadeOut();
-			}
-
 			setTransition(std::move(transition));
 		}
 		void undo(std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
@@ -311,13 +295,6 @@ namespace Yeah {
 			}
 			else {
 				assert(false);
-			}
-
-			if (after()) {
-				after()->callStartFadeIn();
-			}
-			if (before()) {
-				before()->callStartFadeOut();
 			}
 
 			setTransition(std::move(transition));
