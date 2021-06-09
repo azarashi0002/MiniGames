@@ -237,6 +237,87 @@ namespace Yeah {
 			}
 		};
 
+		template<typename FadeOutT, typename FadeInT>
+		class CustomFadeInOut :public ITransition {
+			Timer timer;
+			const Duration fadeOutTime, fadeInTime;
+			Optional<FadeOutT> fadeOut;
+			Optional<FadeInT> fadeIn;
+		public:
+			CustomFadeInOut(const Duration& fadeOutTime, const Duration& fadeInTime) :
+				timer(fadeOutTime + fadeInTime, true),
+				fadeInTime(fadeInTime),
+				fadeOutTime(fadeOutTime),
+				fadeOut(FadeOutT{ fadeOutTime }) {}
+			void update(const std::unique_ptr<Scenes::IScene>& before,
+				const std::unique_ptr<Scenes::IScene>& after) override {
+				if (not fadeIn && timer.remaining() < fadeInTime) {
+					fadeIn.emplace(fadeInTime);
+				}
+				if(timer.remaining() < fadeInTime) {
+					if (fadeIn) {
+						fadeIn->update(before, after);
+					}
+				}
+				else {
+					if (fadeOut) {
+						fadeOut->update(before, after);
+					}
+				}
+			}
+			void draw(const std::unique_ptr<Scenes::IScene>& before,
+				const std::unique_ptr<Scenes::IScene>& after) const override {
+				if (timer.remaining() < fadeInTime) {
+					if (fadeIn) {
+						fadeIn->draw(before, after);
+					}
+				}
+				else {
+					if (fadeOut) {
+						fadeOut->draw(before, after);
+					}
+				}
+			}
+
+			Optional<std::unique_ptr<ITransition>> nextTransition() const override {
+				if (timer.reachedZero()) {
+					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Step>());
+				}
+				else {
+					return none;
+				}
+			}
+		};
+		template<typename FadeOutT, typename FadeInT>
+		class CustomCrossFade :public ITransition {
+			Timer timer;
+			FadeOutT fadeOut;
+			FadeInT fadeIn;
+		public:
+			CustomCrossFade(const Duration& fadeTime) :
+				timer(fadeTime, true),
+				fadeOut(FadeOutT{ fadeTime }),
+				fadeIn(FadeInT{ fadeTime }) {}
+			void update(const std::unique_ptr<Scenes::IScene>& before,
+				const std::unique_ptr<Scenes::IScene>& after) override {
+				fadeIn.update(before, after);
+				fadeOut.update(before, after);
+			}
+			void draw(const std::unique_ptr<Scenes::IScene>& before,
+				const std::unique_ptr<Scenes::IScene>& after) const override {
+				fadeIn.draw(before, after);
+				fadeOut.draw(before, after);
+			}
+
+			Optional<std::unique_ptr<ITransition>> nextTransition() const override {
+				if (timer.reachedZero()) {
+					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Step>());
+				}
+				else {
+					return none;
+				}
+			}
+		};
 	}
 }
 
@@ -276,12 +357,7 @@ namespace Yeah {
 			if (scenes_.size() <= *after_index_ + 1) { return; }
 
 			before_index_ = after_index_;
-			if (after_index_) {
-				++(*after_index_);
-			}
-			else {
-				assert(false);
-			}
+			++(*after_index_);
 
 			setTransition(std::move(transition));
 		}
@@ -290,12 +366,7 @@ namespace Yeah {
 			if (*after_index_ <= 0) { return; }
 
 			before_index_ = after_index_;
-			if (after_index_) {
-				--(*after_index_);
-			}
-			else {
-				assert(false);
-			}
+			--(*after_index_);
 
 			setTransition(std::move(transition));
 		}
@@ -340,7 +411,8 @@ namespace Yeah {
 				transition_->draw(before(), after());
 			}
 
-			Print << U"Transition:" << (transition_ ? Unicode::Widen(typeid(*transition_).name()).split(U':').back() : U"Null");
+			Logger << U"Transition:" << (transition_ ? Unicode::Widen(typeid(*transition_).name()) : U"Null");
+			Print << U"Transition:" << (transition_ ? Unicode::Widen(typeid(*transition_).name()) : U"Null");
 			Print << U"Before:" << (before() ? Unicode::Widen(typeid(*before()).name()) : U"Null");
 			Print << U"After:" << (after() ? Unicode::Widen(typeid(*after()).name()) : U"Null");
 			Print << U"SceneNum:" << scenes_.size();
@@ -390,15 +462,24 @@ namespace Master {
 	public:
 		void update() override {
 			if (SimpleGUI::ButtonAt(U"図形探し", { 400,350 }, 200)) {
-				changeScene(SceneFactory::Create<FindShape::Title>(), TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s));
+				changeScene(
+					SceneFactory::Create<FindShape::Title>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
 			}
 			if (SimpleGUI::ButtonAt(U"クソゲー2", { 400,400 }, 200)) {
-				changeScene(SceneFactory::Create<CountFace::Title>(), TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s));
+				changeScene(
+					SceneFactory::Create<CountFace::Title>(),
+					TransitionFactory::Create<Yeah::Transitions::CustomFadeInOut<Yeah::Transitions::AlphaFadeOut, Yeah::Transitions::AlphaFadeIn>>(0.4s, 0.4s)
+				);
 			}
 			if (SimpleGUI::ButtonAt(U"クソゲー3", { 400,450 }, 200)) {
-
+				changeScene(
+					SceneFactory::Create<CountFace::Title>(),
+					TransitionFactory::Create<Yeah::Transitions::CustomCrossFade<Yeah::Transitions::AlphaFadeOut, Yeah::Transitions::AlphaFadeIn>>(0.8s)
+				);
 			}
-			if (SimpleGUI::ButtonAt(U"クソゲー4", { 400,500 }, 200)) {
+			if (SimpleGUI::ButtonAt(U"終了", { 400,500 }, 200)) {
 				exit();
 			}
 		}
@@ -590,7 +671,7 @@ namespace FindShape {
 			}
 			shapes[target_index].polygon.drawFrame(5, Palette::Yellow);
 			sl_.draw();
-
+			
 			if (SimpleGUI::Button(U"戻る", { 0,0 }, 70)) {
 				delay = [this]() mutable {
 					const_cast<Answer*>(this)->undo(TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s));
