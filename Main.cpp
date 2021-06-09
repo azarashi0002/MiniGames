@@ -309,9 +309,16 @@ public:
 	}
 
 	template<typename T, typename...Arg>
-	static std::unique_ptr<Yeah::Scenes::IScene> Create(const Arg&...args);
+	static std::unique_ptr<Yeah::Scenes::IScene> Create(Arg&&...args);
 };
 SceneFuctory sceneFuctory;
+class TransitionFuctory {
+public:
+	template<typename T, typename...Arg>
+	static std::unique_ptr<yeah::Transitions::ITransition> Create(Arg&&...args) {
+		return std::make_unique<T>(std::forward(args)...);
+	}
+}
 
 namespace Master { class Title; }
 namespace FindShape { class Title; }
