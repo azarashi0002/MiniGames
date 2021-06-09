@@ -1,27 +1,6 @@
-﻿
+
 #include<Siv3D.hpp>
 #include<HamFramework.hpp>
-
-template<typename Shape2D>
-class ScopedIris {
-public:
-	ScopedIris(const Optional<Shape2D>& shape, const Size scene_size = Scene::Size()) :
-		shape_(shape),
-		texture_(scene_size),
-		srt_(texture_) {}
-	~ScopedIris() {
-		if (shape_) {
-			(*shape_)(texture_).draw();
-		}
-		else {
-			texture_.draw();
-		}
-	}
-private:
-	const Optional<Shape2D> shape_;
-	RenderTexture texture_;
-	ScopedRenderTarget2D srt_;
-};
 
 namespace Yeah {
 	namespace Scenes { class IScene; }
@@ -216,11 +195,11 @@ namespace Yeah {
 			}
 			void draw(const std::unique_ptr<Scenes::IScene>& before,
 				const std::unique_ptr<Scenes::IScene>& after) const override {
-				if(after) {
+				if (after) {
 					const ScopedColorMul2D mul(1.0, timer.progress0_1());
 					after->drawFadeIn(timer.progress0_1());
 				}
-				if(before) {
+				if (before) {
 					const ScopedColorMul2D mul(1.0, timer.progress1_0());
 					before->drawFadeOut(timer.progress1_0());
 				}
@@ -290,38 +269,32 @@ namespace Yeah {
 }
 
 class SceneFuctory {
-	HashTable<String, std::function<std::unique_ptr<Yeah::Scenes::IScene>()>> table_;
 public:
-	std::unique_ptr<Yeah::Scenes::IScene> create(StringView key) const {
-		if (table_.contains(String{ key })) {
-			return table_.at(String{ key })();
-		}
-		else {
-			assert(false);
-			return nullptr;
-		}
-	}
-	template<typename T>
-	SceneFuctory& add(StringView key) {
-		assert(not table_.contains(String{ key }));
-		table_[String{ key }] = []() {return std::make_unique<T>(); };
-		return *this;
-	}
-
-	template<typename T, typename...Arg>
-	static std::unique_ptr<Yeah::Scenes::IScene> Create(Arg&&...args);
+	template<typename T, typename...Args>
+	static std::unique_ptr<Yeah::Scenes::IScene> Create(Args&&...args);
 };
 SceneFuctory sceneFuctory;
 class TransitionFuctory {
 public:
-	template<typename T, typename...Arg>
-	static std::unique_ptr<yeah::Transitions::ITransition> Create(Arg&&...args) {
-		return std::make_unique<T>(std::forward(args)...);
+	template<typename T, typename...Args>
+	static std::unique_ptr<Yeah::Transitions::ITransition> Create(Args&&...args) {
+		return std::make_unique<T>(std::forward<Args>(args)...);
 	}
-}
+};
 
-namespace Master { class Title; }
-namespace FindShape { class Title; }
+namespace Master {
+	class Title;
+}
+namespace FindShape {
+	class Title;
+	class GameScene1;
+	class GameScene2;
+	class Result;
+	class Answer;
+}
+namespace CountFace {
+	class Title;
+}
 
 namespace Master {
 	class Title :public Yeah::Scenes::IScene {
@@ -329,13 +302,13 @@ namespace Master {
 	public:
 		void update() override {
 			if (SimpleGUI::ButtonAt(U"図形探し", { 400,350 }, 200)) {
-				changeScene(SceneFuctory::Create<FindShape::Title>()/*sceneFuctory.create(U"FindShapeTitle")*/, std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s));
+				changeScene(SceneFuctory::Create<FindShape::Title>(), TransitionFuctory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s));
 			}
 			if (SimpleGUI::ButtonAt(U"クソゲー2", { 400,400 }, 200)) {
-				changeScene(sceneFuctory.create(U"CountFaceTitle"), std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s));
+				changeScene(SceneFuctory::Create<CountFace::Title>(), TransitionFuctory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s));
 			}
 			if (SimpleGUI::ButtonAt(U"クソゲー3", { 400,450 }, 200)) {
-				
+
 			}
 			if (SimpleGUI::ButtonAt(U"クソゲー4", { 400,500 }, 200)) {
 				exit();
@@ -355,28 +328,28 @@ namespace FindShape {
 			if (SimpleGUI::ButtonAt(U"イージー", { 400,350 }, 200)) {
 				shapenum = 50;
 				changeScene(
-					sceneFuctory.create(U"FindShapeGameScene1"),
-					std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+					SceneFuctory::Create<GameScene1>(),
+					TransitionFuctory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"ノーマル", { 400,400 }, 200)) {
 				shapenum = 100;
 				changeScene(
-					sceneFuctory.create(U"FindShapeGameScene1"),
-					std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+					SceneFuctory::Create<GameScene1>(),
+					TransitionFuctory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"ハード", { 400,450 }, 200)) {
 				shapenum = 200;
 				changeScene(
-					sceneFuctory.create(U"FindShapeGameScene1"),
-					std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+					SceneFuctory::Create<GameScene1>(),
+					TransitionFuctory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
 				changeScene(
-					SceneFuctory::Create<Master::Title>()/*sceneFuctory.create(U"Title")*/,
-					std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+					SceneFuctory::Create<Master::Title>(),
+					TransitionFuctory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 		}
@@ -393,7 +366,6 @@ namespace FindShape {
 	int32 target_index;
 	Optional<int32> grab_index;	//クリック
 	Optional<int32> hold_index;	//0.1秒以上ホールド
-	int32 select_index;	//選択した図形
 	class GameScene1 :public Yeah::Scenes::IScene {
 		const Font font{ 100 };
 		Timer timer{ 3s,true };
@@ -437,8 +409,8 @@ namespace FindShape {
 		void update() override {
 			if (timer.reachedZero()) {
 				changeScene(
-					sceneFuctory.create(U"FindShapeGameScene2"),
-					std::make_unique<Yeah::Transitions::Step>()
+					SceneFuctory::Create<GameScene2>(),
+					TransitionFuctory::Create<Yeah::Transitions::Step>()
 				);
 			}
 		}
@@ -463,12 +435,11 @@ namespace FindShape {
 					hold_index = *grab_index;
 				}
 				if (grab_index && MouseL.up()) {
-					if (not hold_index)  {
+					if (not hold_index) {
 						changeScene(
-							sceneFuctory.create(U"FindShapeResult"),
-							std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+							SceneFuctory::Create<Result>(*grab_index == target_index),
+							TransitionFuctory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 						);
-						select_index = *grab_index;
 					}
 					grab_index = hold_index = none;
 				}
@@ -495,34 +466,38 @@ namespace FindShape {
 	};
 	class Result :public Yeah::Scenes::IScene {
 		const Font font{ 100 };
+		const bool success_ = false;
 	public:
+		Result() {}
+		Result(bool success) :
+			success_(success) {}
 		void update() override {
 			if (SimpleGUI::ButtonAt(U"答え", { 400,400 }, 200)) {
 				changeScene(
-					sceneFuctory.create(U"FindShapeAnswer"),
-					std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+					SceneFuctory::Create<Answer>(),
+					TransitionFuctory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"戻る", { 400,450 }, 200)) {
 				changeScene(
-					sceneFuctory.create(U"FindShapeTitle"),
-					std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+					SceneFuctory::Create<Title>(),
+					TransitionFuctory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 		}
 		void draw() const override {
-			font(target_index == select_index ? U"クリア！！！" : U"残念！").drawAt({ 400,180 });
+			font(success_ ? U"クリア！！！" : U"残念！").drawAt({ 400,180 });
 		}
 	};
 	class Answer :public Yeah::Scenes::IScene {
 		SaturatedLinework<Circle> sl_{ Circle(shapes[target_index].polygon.centroid(),50) };
-		mutable Optional<String> next_key_;
+		mutable Optional<std::unique_ptr<Yeah::Scenes::IScene>> next_key_;
 	public:
 		void update() override {
 			if (next_key_) {
 				changeScene(
-					sceneFuctory.create(*next_key_),
-					std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+					std::move(*next_key_),
+					TransitionFuctory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 		}
@@ -535,7 +510,7 @@ namespace FindShape {
 			sl_.draw();
 
 			if (SimpleGUI::Button(U"戻る", { 0,0 }, 70)) {
-				next_key_ = String{ U"FindShapeResult" };
+				next_key_ = SceneFuctory::Create<Result>(false);
 			}
 		}
 	};
@@ -546,10 +521,10 @@ namespace CountFace {
 	public:
 		void update() override {
 			if (SimpleGUI::ButtonAt(U"イージー", { 400,350 }, 200)) {
-				changeScene(
-					sceneFuctory.create(U"CountFaceRule"),
-					std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
-				);
+				//changeScene(
+				//	sceneFuctory.create(U"CountFaceRule"),
+				//	std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				//);
 			}
 			if (SimpleGUI::ButtonAt(U"ノーマル", { 400,400 }, 200)) {
 				//changeScene(
@@ -565,13 +540,13 @@ namespace CountFace {
 			}
 			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
 				changeScene(
-					sceneFuctory.create(U"Title"),
-					std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+					SceneFuctory::Create<Master::Title>(),
+					TransitionFuctory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 		}
 		void draw() const override {
-			font(U"カウント！").drawAt({ 400,180 });
+			font(U"うんち！").drawAt({ 400,180 });
 		}
 	};
 	class Rule :public Yeah::Scenes::IScene {
@@ -591,25 +566,16 @@ namespace ConwaysGameOfLife {
 
 }
 
-template<typename T, typename...Arg>
-std::unique_ptr<Yeah::Scenes::IScene> SceneFuctory::Create(Arg&&...args) {
-	return std::make_unique<T>(std::forward(args)...);
+template<typename T, typename...Args>
+std::unique_ptr<Yeah::Scenes::IScene> SceneFuctory::Create(Args&&...args) {
+	return std::make_unique<T>(std::forward<Args>(args)...);
 }
 
 void Main() {
 	Window::SetPos({ 1000,200 });
 	Scene::SetBackground(ColorF(0.2, 0.3, 0.4));
-	sceneFuctory
-		.add<Master::Title>(U"Title")
-		.add<FindShape::Title>(U"FindShapeTitle")
-		.add<FindShape::GameScene1>(U"FindShapeGameScene1")
-		.add<FindShape::GameScene2>(U"FindShapeGameScene2")
-		.add<FindShape::Result>(U"FindShapeResult")
-		.add<FindShape::Answer>(U"FindShapeAnswer")
-		.add<CountFace::Title>(U"CountFaceTitle")
-		.add<CountFace::Rule>(U"CountFaceRule");
 	Yeah::SceneChanger sc;
-	sc.change(SceneFuctory::Create<Master::Title>()/*sceneFuctory.create(U"Title")*/);
+	sc.change(SceneFuctory::Create<Master::Title>());
 	while (System::Update()) {
 		ClearPrint();
 		if (not sc.update()) {
