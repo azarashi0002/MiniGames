@@ -15,7 +15,6 @@ public:
 };
 namespace Yeah {
 	namespace Scenes {
-
 		class IScene {
 			friend class SceneChanger;
 
@@ -25,6 +24,8 @@ namespace Yeah {
 			Optional<std::unique_ptr<Transitions::ITransition>> redo_;
 		public:
 			virtual ~IScene() {}
+			virtual void initialize() {}	//シーンが呼ばれたとき(undo・redoでも呼ばれる)
+
 			virtual void update() = 0;
 			virtual void draw() const = 0;
 
@@ -58,7 +59,6 @@ public:
 };
 namespace Yeah {
 	namespace Transitions {
-
 		class ITransition {
 		public:
 			virtual ~ITransition() = default;
@@ -254,7 +254,7 @@ namespace Yeah {
 				if (not fadeIn && timer.remaining() < fadeInTime) {
 					fadeIn.emplace(fadeInTime);
 				}
-				if(timer.remaining() < fadeInTime) {
+				if (timer.remaining() < fadeInTime) {
 					if (fadeIn) {
 						fadeIn->update(before, after);
 					}
@@ -288,6 +288,7 @@ namespace Yeah {
 				}
 			}
 		};
+
 		template<typename FadeOutT, typename FadeInT>
 		class CustomCrossFade :public ITransition {
 			Timer timer;
@@ -355,6 +356,10 @@ namespace Yeah {
 			else {
 				after_index_ = 0;
 			}
+			
+			if (after()) {
+				after()->initialize();
+			}
 
 			setTransition(std::move(transition));
 		}
@@ -365,6 +370,10 @@ namespace Yeah {
 			before_index_ = after_index_;
 			++(*after_index_);
 
+			if (after()) {
+				after()->initialize();
+			}
+
 			setTransition(std::move(transition));
 		}
 		void undo(std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
@@ -373,6 +382,10 @@ namespace Yeah {
 
 			before_index_ = after_index_;
 			--(*after_index_);
+
+			if (after()) {
+				after()->initialize();
+			}
 
 			setTransition(std::move(transition));
 		}
@@ -385,16 +398,23 @@ namespace Yeah {
 			if (after()) {
 				if (after()->change_) {
 					change(std::move(after()->change_->first), std::move(after()->change_->second));
-					after()->change_.reset();
 				}
 				if (after()->undo_) {
 					undo(std::move(*after()->undo_));
-					after()->undo_.reset();
 				}
 				if (after()->redo_) {
 					redo(std::move(*after()->redo_));
-					after()->redo_.reset();
 				}
+			}
+			if (after()) {
+				after()->change_.reset();
+				after()->undo_.reset();
+				after()->redo_.reset();
+			}
+			if (before()) {
+				before()->change_.reset();
+				before()->undo_.reset();
+				before()->redo_.reset();
 			}
 
 			if (KeyU.down()) {
@@ -417,13 +437,23 @@ namespace Yeah {
 				transition_->draw(before(), after());
 			}
 
-			Logger << U"Transition:" << (transition_ ? Unicode::Widen(typeid(*transition_).name()) : U"Null");
 			Print << U"Transition:" << (transition_ ? Unicode::Widen(typeid(*transition_).name()) : U"Null");
 			Print << U"Before:" << (before() ? Unicode::Widen(typeid(*before()).name()) : U"Null");
 			Print << U"After:" << (after() ? Unicode::Widen(typeid(*after()).name()) : U"Null");
 			Print << U"SceneNum:" << scenes_.size();
 			Print << U"BeforeIndex:" << (before_index_ ? U"{}"_fmt(*before_index_) : U"Null");
 			Print << U"AfterIndex:" << (after_index_ ? U"{}"_fmt(*after_index_) : U"Null");
+			if (before()) {
+				if (before()->change_) {
+					Print << U"Before::Change::Scene:" << (before()->change_->first ? Unicode::Widen(typeid(*before()->change_->first).name()) : U"Null");
+					Print << U"Before::Change::Transition:" << (before()->change_->second ? Unicode::Widen(typeid(*before()->change_->second).name()) : U"Null");
+				}
+				else {
+					Print << U"Before::Change:" << U"Null";
+				}
+				Print << U"Before::Undo:" << (before()->undo_ ? Unicode::Widen(typeid(*before()->undo_).name()) : U"Null");
+				Print << U"Before::Redo:" << (before()->redo_ ? Unicode::Widen(typeid(*before()->redo_).name()) : U"Null");
+			}
 		}
 
 	private:
@@ -540,10 +570,15 @@ namespace FindShape {
 	class GameScene1 :public Yeah::Scenes::IScene {
 		const Font font{ 100 };
 		Timer timer{ 3s,true };
+		int32 shapenum_;
 	public:
-		GameScene1(int32 shapenum) {
+		GameScene1(int32 shapenum) :
+			shapenum_(shapenum) {}
+		void initialize() override {
+			timer.restart();
+
 			shapes.clear();
-			for ([[maybe_unused]] int i : step(shapenum)) {
+			for ([[maybe_unused]] int i : step(shapenum_)) {
 				const Vec2 center = RandomVec2(Rect(0, 0, 800, 600));
 				const double angle = Random(Math::TwoPi);
 				const ColorF color = RandomColorF();
@@ -577,6 +612,7 @@ namespace FindShape {
 			target_index = Random(shapes.size() - 1);
 			grab_index = hold_index = none;
 		}
+
 		void update() override {
 			if (timer.reachedZero()) {
 				changeScene(
@@ -631,7 +667,7 @@ namespace FindShape {
 			}
 			if (mouseover_index) {
 				shapes[*mouseover_index].polygon.drawFrame(3, Palette::Yellow);
-				Print << (*mouseover_index == target_index);
+				//Print << (*mouseover_index == target_index);
 			}
 		}
 	};
@@ -677,7 +713,7 @@ namespace FindShape {
 			}
 			shapes[target_index].polygon.drawFrame(5, Palette::Yellow);
 			sl_.draw();
-			
+
 			if (SimpleGUI::Button(U"戻る", { 0,0 }, 70)) {
 				delay = [this]() mutable {
 					const_cast<Answer*>(this)->undo(TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s));
@@ -692,22 +728,10 @@ namespace CountFace {
 	public:
 		void update() override {
 			if (SimpleGUI::ButtonAt(U"イージー", { 400,350 }, 200)) {
-				//changeScene(
-				//	sceneFuctory.create(U"CountFaceRule"),
-				//	std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
-				//);
 			}
 			if (SimpleGUI::ButtonAt(U"ノーマル", { 400,400 }, 200)) {
-				//changeScene(
-				//	sceneFuctory.create(U"FindShapeGameScene1"),
-				//	std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
-				//);
 			}
 			if (SimpleGUI::ButtonAt(U"ハード", { 400,450 }, 200)) {
-				//changeScene(
-				//	sceneFuctory.create(U"FindShapeGameScene1"),
-				//	std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
-				//);
 			}
 			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
 				changeScene(
@@ -750,7 +774,7 @@ std::unique_ptr<Yeah::Transitions::ITransition> TransitionFactory::Create(Args&&
 void Main() {
 	Window::SetPos({ 1000,200 });
 	Scene::SetBackground(ColorF(0.2, 0.3, 0.4));
-	
+
 	Yeah::SceneChanger sc(
 		SceneFactory::Create<Master::Title>(),
 		TransitionFactory::Create<Yeah::Transitions::AlphaFadeIn>(1s)
