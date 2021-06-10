@@ -442,24 +442,6 @@ namespace Yeah {
 			if (transition_) {
 				transition_->draw(before(), after());
 			}
-
-			Print << U"Transition:" << (transition_ ? Unicode::Widen(typeid(*transition_).name()) : U"Null");
-			Print << U"Before:" << (before() ? Unicode::Widen(typeid(*before()).name()) : U"Null");
-			Print << U"After:" << (after() ? Unicode::Widen(typeid(*after()).name()) : U"Null");
-			Print << U"SceneNum:" << scenes_.size();
-			Print << U"BeforeIndex:" << (before_index_ ? U"{}"_fmt(*before_index_) : U"Null");
-			Print << U"AfterIndex:" << (after_index_ ? U"{}"_fmt(*after_index_) : U"Null");
-			if (before()) {
-				if (before()->request_.change_) {
-					Print << U"Before::Change::Scene:" << (before()->request_.change_->first ? Unicode::Widen(typeid(*before()->request_.change_->first).name()) : U"Null");
-					Print << U"Before::Change::Transition:" << (before()->request_.change_->second ? Unicode::Widen(typeid(*before()->request_.change_->second).name()) : U"Null");
-				}
-				else {
-					Print << U"Before::Change:" << U"Null";
-				}
-				Print << U"Before::Undo:" << (before()->request_.undo_ ? Unicode::Widen(typeid(*before()->request_.undo_).name()) : U"Null");
-				Print << U"Before::Redo:" << (before()->request_.redo_ ? Unicode::Widen(typeid(*before()->request_.redo_).name()) : U"Null");
-			}
 		}
 
 	private:
@@ -486,6 +468,13 @@ namespace Yeah {
 namespace Master {
 	class Title;
 }
+namespace Second {
+	class Title;
+}
+namespace ConwaysGameOfLife {
+	class Title;
+	class Game;
+}
 namespace FindShape {
 	class Title;
 	class GameScene1;
@@ -493,17 +482,47 @@ namespace FindShape {
 	class Result;
 	class Answer;
 }
-namespace CountFace {
-	class Title;
-}
-namespace ConwaysGameOfLife {
+namespace TenSecondsTimer {
 	class Title;
 	class Rule;
 	class Game;
+	class Result;
 }
 
 /*シーン実装*/
 namespace Master {
+	class Title :public Yeah::Scenes::IScene {
+		const Font font{ 100 };
+	public:
+		void update() override {
+			if (SimpleGUI::ButtonAt(U"ライフゲーム", { 400,350 }, 200)) {
+				changeScene(
+					SceneFactory::Create<ConwaysGameOfLife::Title>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
+			if (SimpleGUI::ButtonAt(U"", { 400,400 }, 200, false)) {
+				//changeScene(
+				//	SceneFactory::Create<FindShape::Title>(),
+				//	TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				//);
+			}
+			if (SimpleGUI::ButtonAt(U"供養ゲーム", { 400,450 }, 200)) {
+				changeScene(
+					SceneFactory::Create<Second::Title>(),
+					TransitionFactory::Create<Yeah::Transitions::CustomFadeInOut<Yeah::Transitions::AlphaFadeOut, Yeah::Transitions::AlphaFadeIn>>(0.4s, 0.4s)
+				);
+			}
+			if (SimpleGUI::ButtonAt(U"終了", { 400,500 }, 200)) {
+				exit();
+			}
+		}
+		void draw() const override {
+			font(U"MiniGames").drawAt({ 400,180 });
+		}
+	};
+}
+namespace Second {
 	class Title :public Yeah::Scenes::IScene {
 		const Font font{ 100 };
 	public:
@@ -514,24 +533,138 @@ namespace Master {
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
-			if (SimpleGUI::ButtonAt(U"クソゲー2", { 400,400 }, 200)) {
+			if (SimpleGUI::ButtonAt(U"10秒タイマー", { 400,400 }, 200, true)) {
 				changeScene(
-					SceneFactory::Create<CountFace::Title>(),
-					TransitionFactory::Create<Yeah::Transitions::CustomFadeInOut<Yeah::Transitions::AlphaFadeOut, Yeah::Transitions::AlphaFadeIn>>(0.4s, 0.4s)
-				);
-			}
-			if (SimpleGUI::ButtonAt(U"ライフゲーム", { 400,450 }, 200)) {
-				changeScene(
-					SceneFactory::Create<ConwaysGameOfLife::Title>(),
+					SceneFactory::Create<TenSecondsTimer::Title>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
-			if (SimpleGUI::ButtonAt(U"終了", { 400,500 }, 200)) {
-				exit();
+			if (SimpleGUI::ButtonAt(U"", { 400,450 }, 200, false)) {
+			}
+			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
+				changeScene(
+					SceneFactory::Create<Master::Title>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
 			}
 		}
 		void draw() const override {
-			font(U"Title!!!!!!").drawAt({ 400,180 });
+			font(U"MiniGames").drawAt({ 400,180 });
+		}
+	};
+}
+namespace ConwaysGameOfLife {
+	class Impl {	//ライフゲーム本体
+	public:
+		Grid<bool> cell_;
+
+		Impl(const Size& size, bool value = false) :
+			cell_(size, value) {}
+		void update() {
+			Grid<int32> countAround(cell_.size(), 0);
+			for (const auto& p : step(cell_.size())) {
+				for (const auto& i : step(Point(-1, -1), Size(3, 3))) {
+					if (i.isZero()) {
+						continue;
+					}
+					countAround[p] += cell_.fetch(p + i, false);
+				}
+			}
+			Grid<bool> tmp(cell_.size());
+			for (const auto& p : step(cell_.size())) {
+				tmp[p] = (countAround[p] == 3) || (countAround[p] == 2 && cell_[p]);
+			}
+			cell_ = std::move(tmp);
+		}
+		void draw() const {
+			for (const auto& p : step(cell_.size())) {
+				RectF(p, 1).draw(cell_[p] ? Palette::Yellow : Palette::Gray).drawFrame(0.05, 0.0, Palette::Black);
+			}
+		}
+	};
+
+	class Title :public Yeah::Scenes::IScene {
+		Impl impl_{ Size(40,30) };
+		Timer timer{ 2s,true };
+		const Font font{ 100 };
+	public:
+		Title() {
+			for (auto&& i : impl_.cell_) {
+				i = RandomBool(0.3);
+			}
+		}
+		void update() override {
+			impl_.update();
+			if (timer.reachedZero()) {
+				for (auto&& i : impl_.cell_) {
+					i = RandomBool(0.3);
+				}
+				timer.restart();
+			}
+
+			if (SimpleGUI::ButtonAt(U"スタート", { 400,400 }, 200)) {
+				changeScene(
+					SceneFactory::Create<Game>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
+			if (SimpleGUI::ButtonAt(U"戻る", { 400,450 }, 200)) {
+				changeScene(
+					SceneFactory::Create<Master::Title>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
+		}
+		void draw() const override {
+			{
+				const Transformer2D t(Mat3x2::Translate(-10, -7.5).scaled(40));
+				const ScopedColorMul2D s(1.0, 0.1);
+				impl_.draw();
+			}
+			font(U"ライフゲーム").drawAt({ 400,180 });
+		}
+	};
+	class Game :public Yeah::Scenes::IScene {
+		Impl impl_{ Size(30,30) };
+		bool auto_ = false;
+	public:
+		void update() override {
+			{
+				const Transformer2D t(Mat3x2::Scale(20), true);
+				for (const auto& p : step(impl_.cell_.size())) {
+					if (const auto& region = RectF(p, 1); region.leftPressed()) {
+						impl_.cell_[p] = true;
+					}
+					else if (region.rightPressed()) {
+						impl_.cell_[p] = false;
+					}
+				}
+			}
+
+			if (SimpleGUI::ButtonAt(U"次へ", { 700,50 }, 160, not auto_)) {
+				impl_.update();
+			}
+			SimpleGUI::CheckBoxAt(auto_, U"オート", { 700,100 }, 160);
+			if (auto_) {
+				impl_.update();
+			}
+			if (SimpleGUI::ButtonAt(U"ランダム", { 700,200 }, 160)) {
+				const double chance = Random(0.1, 0.5);
+				for (auto&& i : impl_.cell_) {
+					i = RandomBool(chance);
+				}
+			}
+			if (SimpleGUI::ButtonAt(U"リセット", { 700,250 }, 160)) {
+				impl_.cell_.fill(false);
+			}
+
+			if (SimpleGUI::ButtonAt(U"戻る", { 700,550 }, 160) || KeyB.down()) {
+				undo(TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s));
+			}
+		}
+		void draw() const override {
+			const Transformer2D t(Mat3x2::Scale(20), true);
+			impl_.draw();
 		}
 	};
 }
@@ -560,7 +693,7 @@ namespace FindShape {
 			}
 			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
 				changeScene(
-					SceneFactory::Create<Master::Title>(),
+					SceneFactory::Create<Second::Title>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
@@ -735,73 +868,155 @@ namespace FindShape {
 		}
 	};
 }
-namespace CountFace {
+namespace TenSecondsTimer {
 	class Title :public Yeah::Scenes::IScene {
 		const Font font{ 100 };
+		const std::array<Texture, 12> clocks = {
+			Texture{Emoji(U"🕛")},
+			Texture{Emoji(U"🕐")},
+			Texture{Emoji(U"🕑")},
+			Texture{Emoji(U"🕒")},
+			Texture{Emoji(U"🕓")},
+			Texture{Emoji(U"🕔")},
+			Texture{Emoji(U"🕕")},
+			Texture{Emoji(U"🕖")},
+			Texture{Emoji(U"🕗")},
+			Texture{Emoji(U"🕘")},
+			Texture{Emoji(U"🕙")},
+			Texture{Emoji(U"🕚")},
+		};
 	public:
 		void update() override {
-			if (SimpleGUI::ButtonAt(U"イージー", { 400,350 }, 200)) {
-			}
-			if (SimpleGUI::ButtonAt(U"ノーマル", { 400,400 }, 200)) {
-			}
-			if (SimpleGUI::ButtonAt(U"ハード", { 400,450 }, 200)) {
-			}
-			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
-				changeScene(
-					SceneFactory::Create<Master::Title>(),
-					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
-				);
-			}
-		}
-		void draw() const override {
-			font(U"うんち！").drawAt({ 400,180 });
-		}
-	};
-	class Rule :public Yeah::Scenes::IScene {
-		const Font font{ 100 }, font50{ 50 };
-
-	public:
-		void update() override {
-
-		}
-		void draw() const override {
-			font(U"ルール").drawAt({ 400,120 });
-			font50(U"顔が右から左に流れていく\n指定された顔の数を数えよう").drawAt({ 400,320 });
-		}
-	};
-}
-namespace ConwaysGameOfLife {
-	class Title :public Yeah::Scenes::IScene {
-		const Font font{ 100 };
-	public:
-		void update() override {
-			if (SimpleGUI::ButtonAt(U"スタート", { 400,400 }, 200)) {
+			if (SimpleGUI::ButtonAt(U"スタート", { 400,350 }, 200)) {
 				changeScene(
 					SceneFactory::Create<Game>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
-			if (SimpleGUI::ButtonAt(U"ルール", { 400,450 }, 200)) {
+			if (SimpleGUI::ButtonAt(U"ルール", { 400,400 }, 200)) {
 				changeScene(
 					SceneFactory::Create<Rule>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
-			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
+			if (SimpleGUI::ButtonAt(U"戻る", { 400,450 }, 200)) {
 				changeScene(
-					SceneFactory::Create<Master::Title>(),
+					SceneFactory::Create<Second::Title>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 		}
 		void draw() const override {
-			font(U"ライフゲーム").drawAt({ 400,180 });
+			clocks[static_cast<int32>(Scene::Time()) % clocks.size()].scaled(3).drawAt({ 400,300 }, ColorF(1.0, 0.1));
+			font(U"10秒タイマー").drawAt({ 400,180 });
 		}
 	};
 	class Rule :public Yeah::Scenes::IScene {
-		const Font font{ 100 };
+		const Font font{ 100 }, font50{ 50 };
+		const std::array<Texture, 12> clocks = {
+			Texture{Emoji(U"🕛")},
+			Texture{Emoji(U"🕐")},
+			Texture{Emoji(U"🕑")},
+			Texture{Emoji(U"🕒")},
+			Texture{Emoji(U"🕓")},
+			Texture{Emoji(U"🕔")},
+			Texture{Emoji(U"🕕")},
+			Texture{Emoji(U"🕖")},
+			Texture{Emoji(U"🕗")},
+			Texture{Emoji(U"🕘")},
+			Texture{Emoji(U"🕙")},
+			Texture{Emoji(U"🕚")},
+		};
 	public:
 		void update() override {
+			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
+				undo(TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s));
+			}
+		}
+		void draw() const override {
+			clocks[static_cast<int32>(Scene::Time()) % clocks.size()].scaled(3).drawAt({ 400,300 }, ColorF(1.0, 0.1));
+			font(U"ルール").drawAt({ 400,120 });
+			font50(U"カウントダウン後にタイマーが\nスタートする\n10秒経ったらボタンを押そう").drawAt({ 400,320 });
+		}
+	};
+	class Game :public Yeah::Scenes::IScene {
+		const Font font{ 100 };
+		const std::array<Texture, 12> clocks = {
+			Texture{Emoji(U"🕛")},
+			Texture{Emoji(U"🕐")},
+			Texture{Emoji(U"🕑")},
+			Texture{Emoji(U"🕒")},
+			Texture{Emoji(U"🕓")},
+			Texture{Emoji(U"🕔")},
+			Texture{Emoji(U"🕕")},
+			Texture{Emoji(U"🕖")},
+			Texture{Emoji(U"🕗")},
+			Texture{Emoji(U"🕘")},
+			Texture{Emoji(U"🕙")},
+			Texture{Emoji(U"🕚")},
+		};
+		enum class State {
+			Wait,
+			CountDown,
+			Time,
+			Finish,
+			Size,
+		} state = State::Wait;
+		Timer count_down_{ 3s };
+		Stopwatch result_;
+	public:
+		void update() override {
+			switch (state) {
+			case State::Wait:
+				if (SimpleGUI::ButtonAt(U"準備OK！", { 400,300 }, 200)) {
+					state = State::CountDown;
+					count_down_.start();
+				}
+				break;
+			case State::CountDown:
+				if (count_down_.reachedZero()) {
+					state = State::Time;
+					result_.start();
+				}
+				break;
+			case State::Time:
+				if (SimpleGUI::ButtonAt(U"ストップ！", { 400,300 }, 200)) {
+					state = State::Finish;
+					changeScene(
+						SceneFactory::Create<Result>(result_.elapsed()),
+						TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+					);
+				}
+				break;
+			case State::Finish:
+				SimpleGUI::ButtonAt(U"ストップ！", { 400,300 }, 200, false);
+				break;
+			}
+		}
+		void draw() const override {
+			switch (state) {
+			case State::Wait:
+				clocks[static_cast<int32>(Scene::Time()) % clocks.size()].scaled(3).drawAt({ 400,300 }, ColorF(1.0, 0.1));
+				break;
+			case State::CountDown:
+				font(Ceil(count_down_.remaining().count())).drawAt({ 400,300 });
+				break;
+			}
+		}
+	};
+	class Result :public Yeah::Scenes::IScene {
+		const Font font{ 100 }, font50{ 50 };
+		Duration duration_;
+	public:
+		Result(const Duration& duration) :
+			duration_(duration) {}
+		void update() override {
+			if (SimpleGUI::ButtonAt(U"もう一度", { 400,450 }, 200)) {
+				changeScene(
+					SceneFactory::Create<Game>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
 			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
 				changeScene(
 					SceneFactory::Create<Title>(),
@@ -810,61 +1025,8 @@ namespace ConwaysGameOfLife {
 			}
 		}
 		void draw() const override {
-			font(U"ルールだよ！").drawAt({ 400,180 });
-		}
-	};
-	class Game :public Yeah::Scenes::IScene {
-		Grid<bool> cell_{ Size(30,30),false };
-		bool auto_ = false;
-	public:
-		void update() override {
-			for (const auto& p : step(cell_.size())) {
-				if (const auto& region = Region(p); region.leftPressed()) {
-					cell_[p] = true;
-				}
-				else if (region.rightPressed()) {
-					cell_[p] = false;
-				}
-			}
-
-			if (SimpleGUI::ButtonAt(U"次へ(N)", { 700,50 }, 160, not auto_) || ((not auto_) && KeyN.down())) {
-				next();
-			}
-			SimpleGUI::CheckBoxAt(auto_, U"オート(A)", { 700,100 }, 160);
-			auto_ ^= KeyA.down();
-			if (auto_) {
-				next();
-			}
-			if (SimpleGUI::ButtonAt(U"戻る(B)", { 700,550 }, 160) || KeyB.down()) {
-				undo(TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s));
-			}
-		}
-		void draw() const override {
-			for (const auto& p : step(cell_.size())) {
-				Region(p).draw(cell_[p] ? Palette::Yellow : Palette::Gray).drawFrame(1.0, Palette::Black);
-			}
-		}
-
-	private:
-		static RectF Region(const Point& p) {
-			return { p * 20,20 };
-		}
-
-		void next() {
-			Grid<int32> countAround(cell_.size(), 0);
-			for (const auto& p : step(cell_.size())) {
-				for (const auto& i : step(Point(-1, -1), Size(3, 3))) {
-					if (i.isZero()) {
-						continue;
-					}
-					countAround[p] += cell_.fetch(p + i, false);
-				}
-			}
-			Grid<bool> tmp(cell_.size());
-			for (const auto& p : step(cell_.size())) {
-				tmp[p] = (countAround[p] == 3) || (countAround[p] == 2 && cell_[p]);
-			}
-			cell_ = std::move(tmp);
+			font(duration_).drawAt({ 400,250 }, Palette::White);
+			font50(Abs((duration_ - 10s).count()) <= 0.5 ? U"お見事！" : U"もう一度！").drawAt({ 400,350 }, Palette::White);
 		}
 	};
 }
@@ -880,6 +1042,7 @@ std::unique_ptr<Yeah::Transitions::ITransition> TransitionFactory::Create(Args&&
 }
 
 void Main() {
+	Window::SetTitle(U"MiniGames");
 	Window::SetPos({ 1000,200 });
 	Scene::SetBackground(ColorF(0.2, 0.3, 0.4));
 
@@ -888,7 +1051,6 @@ void Main() {
 		TransitionFactory::Create<Yeah::Transitions::AlphaFadeIn>(1s)
 	);
 	while (System::Update()) {
-		ClearPrint();
 		if (not sc.update()) {
 			break;
 		}
