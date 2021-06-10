@@ -1200,6 +1200,8 @@ std::unique_ptr<Yeah::Transitions::ITransition> TransitionFactory::Create(Args&&
 }
 
 void Main() {
+	Profiler::EnableAssetCreationWarning(false);
+	
 	Window::SetTitle(U"MiniGames");
 	Window::SetPos({ 1000,200 });
 	Scene::SetBackground(ColorF(0.2, 0.3, 0.4));
