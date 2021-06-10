@@ -17,18 +17,18 @@ namespace Yeah {
 		virtual ~ISceneFactory() = default;
 		virtual std::unique_ptr<Yeah::Scenes::IScene> create() const = 0;
 	};
-	template<typename T, typename...Args>
+	template<typename SceneT, typename...Args>
 	class SceneFactory :public ISceneFactory {
 		std::tuple<Args&&...> args_;
 	public:
 		SceneFactory(Args&&...args) :
-			args_(std::forward<Args>(args)...) {}
+			args_(std::move(args)...) {}
 		std::unique_ptr<Yeah::Scenes::IScene> create() const override {
 			return std::apply(
 				[](auto&&...args) {
-					return std::make_unique<T>(std::forward<decltype(args)>(args)...);
+					return std::make_unique<SceneT>(std::forward<decltype(args)>(args)...);
 				},
-				args_
+				std::move(args_)
 			);
 		}
 	};
@@ -42,7 +42,6 @@ public:
 };
 namespace Yeah {
 	namespace Scenes {
-
 		class IScene {
 			friend class SceneChanger;
 
@@ -753,8 +752,6 @@ std::unique_ptr<Yeah::Transitions::ITransition> TransitionFactory::Create(Args&&
 }
 
 void Main() {
-	std::tuple<std::unique_ptr<int>&&> p(std::make_unique<int>(9));
-	auto&& q = std::move(std::get<0>(p));
 	Window::SetPos({ 1000,200 });
 	Scene::SetBackground(ColorF(0.2, 0.3, 0.4));
 	
