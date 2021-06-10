@@ -18,10 +18,18 @@ namespace Yeah {
 		class IScene {
 			friend class SceneChanger;
 
-			Optional<std::pair<std::unique_ptr<IScene>, std::unique_ptr<Transitions::ITransition>>> change_;
-			bool exit_ = false;
-			Optional<std::unique_ptr<Transitions::ITransition>> undo_;
-			Optional<std::unique_ptr<Transitions::ITransition>> redo_;
+			struct {
+				bool exit_ = false;
+				Optional<std::pair<std::unique_ptr<IScene>, std::unique_ptr<Transitions::ITransition>>> change_;
+				Optional<std::unique_ptr<Transitions::ITransition>> undo_;
+				Optional<std::unique_ptr<Transitions::ITransition>> redo_;
+
+				void resetOptional() {
+					change_.reset();
+					undo_.reset();
+					redo_.reset();
+				}
+			} request_;
 		public:
 			virtual ~IScene() {}
 			virtual void initialize() {}	//シーンが呼ばれたとき(undo・redoでも呼ばれる)
@@ -34,19 +42,18 @@ namespace Yeah {
 			virtual void drawFadeIn(double /*t*/) const { draw(); }
 			virtual void drawFadeOut(double /*t*/) const { draw(); }
 
+			void exit() {
+				request_.exit_ = true;
+			}
 			void changeScene(std::unique_ptr<IScene>&& scene,
 				std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
-				change_ = std::make_pair(std::move(scene), std::move(transition));
-			}
-
-			void exit() {
-				exit_ = true;
+				request_.change_ = std::make_pair(std::move(scene), std::move(transition));
 			}
 			void undo(std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
-				undo_ = std::move(transition);
+				request_.undo_ = std::move(transition);
 			}
 			void redo(std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
-				redo_ = std::move(transition);
+				request_.redo_ = std::move(transition);
 			}
 		};
 	}
@@ -396,25 +403,24 @@ namespace Yeah {
 			}
 
 			if (after()) {
-				if (after()->change_) {
-					change(std::move(after()->change_->first), std::move(after()->change_->second));
+				if (after()->request_.change_) {
+					change(
+						std::move(after()->request_.change_->first),
+						std::move(after()->request_.change_->second)
+					);
 				}
-				if (after()->undo_) {
-					undo(std::move(*after()->undo_));
+				if (after()->request_.undo_) {
+					undo(std::move(*after()->request_.undo_));
 				}
-				if (after()->redo_) {
-					redo(std::move(*after()->redo_));
+				if (after()->request_.redo_) {
+					redo(std::move(*after()->request_.redo_));
 				}
 			}
 			if (after()) {
-				after()->change_.reset();
-				after()->undo_.reset();
-				after()->redo_.reset();
+				after()->request_.resetOptional();
 			}
 			if (before()) {
-				before()->change_.reset();
-				before()->undo_.reset();
-				before()->redo_.reset();
+				before()->request_.resetOptional();
 			}
 
 			if (KeyU.down()) {
@@ -430,7 +436,7 @@ namespace Yeah {
 				}
 			}
 
-			return after() ? not after()->exit_ : true;
+			return after() ? not after()->request_.exit_ : true;
 		}
 		void draw() const {
 			if (transition_) {
@@ -444,15 +450,15 @@ namespace Yeah {
 			Print << U"BeforeIndex:" << (before_index_ ? U"{}"_fmt(*before_index_) : U"Null");
 			Print << U"AfterIndex:" << (after_index_ ? U"{}"_fmt(*after_index_) : U"Null");
 			if (before()) {
-				if (before()->change_) {
-					Print << U"Before::Change::Scene:" << (before()->change_->first ? Unicode::Widen(typeid(*before()->change_->first).name()) : U"Null");
-					Print << U"Before::Change::Transition:" << (before()->change_->second ? Unicode::Widen(typeid(*before()->change_->second).name()) : U"Null");
+				if (before()->request_.change_) {
+					Print << U"Before::Change::Scene:" << (before()->request_.change_->first ? Unicode::Widen(typeid(*before()->request_.change_->first).name()) : U"Null");
+					Print << U"Before::Change::Transition:" << (before()->request_.change_->second ? Unicode::Widen(typeid(*before()->request_.change_->second).name()) : U"Null");
 				}
 				else {
 					Print << U"Before::Change:" << U"Null";
 				}
-				Print << U"Before::Undo:" << (before()->undo_ ? Unicode::Widen(typeid(*before()->undo_).name()) : U"Null");
-				Print << U"Before::Redo:" << (before()->redo_ ? Unicode::Widen(typeid(*before()->redo_).name()) : U"Null");
+				Print << U"Before::Undo:" << (before()->request_.undo_ ? Unicode::Widen(typeid(*before()->request_.undo_).name()) : U"Null");
+				Print << U"Before::Redo:" << (before()->request_.redo_ ? Unicode::Widen(typeid(*before()->request_.redo_).name()) : U"Null");
 			}
 		}
 
@@ -490,6 +496,11 @@ namespace FindShape {
 namespace CountFace {
 	class Title;
 }
+namespace ConwaysGameOfLife {
+	class Title;
+	class Rule;
+	class Game;
+}
 
 /*シーン実装*/
 namespace Master {
@@ -509,10 +520,10 @@ namespace Master {
 					TransitionFactory::Create<Yeah::Transitions::CustomFadeInOut<Yeah::Transitions::AlphaFadeOut, Yeah::Transitions::AlphaFadeIn>>(0.4s, 0.4s)
 				);
 			}
-			if (SimpleGUI::ButtonAt(U"クソゲー3", { 400,450 }, 200)) {
+			if (SimpleGUI::ButtonAt(U"ライフゲーム", { 400,450 }, 200)) {
 				changeScene(
-					SceneFactory::Create<CountFace::Title>(),
-					TransitionFactory::Create<Yeah::Transitions::CustomCrossFade<Yeah::Transitions::AlphaFadeOut, Yeah::Transitions::AlphaFadeIn>>(0.8s)
+					SceneFactory::Create<ConwaysGameOfLife::Title>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"終了", { 400,500 }, 200)) {
@@ -697,7 +708,7 @@ namespace FindShape {
 		}
 	};
 	class Answer :public Yeah::Scenes::IScene {
-		SaturatedLinework<Circle> sl_{ Circle(shapes[target_index].polygon.centroid(),50) };
+		SaturatedLinework<Circle> linework_{ Circle(shapes[target_index].polygon.centroid(),100) };
 		mutable std::function<void()> delay;
 	public:
 		void update() override {
@@ -705,6 +716,8 @@ namespace FindShape {
 				delay();
 				delay = decltype(delay)();
 			}
+
+			linework_.generate();
 		}
 		void draw() const override {
 			for (const auto& [polygon, color] : shapes) {
@@ -712,7 +725,7 @@ namespace FindShape {
 				polygon.draw(color);
 			}
 			shapes[target_index].polygon.drawFrame(5, Palette::Yellow);
-			sl_.draw();
+			linework_.draw();
 
 			if (SimpleGUI::Button(U"戻る", { 0,0 }, 70)) {
 				delay = [this]() mutable {
@@ -758,7 +771,102 @@ namespace CountFace {
 	};
 }
 namespace ConwaysGameOfLife {
+	class Title :public Yeah::Scenes::IScene {
+		const Font font{ 100 };
+	public:
+		void update() override {
+			if (SimpleGUI::ButtonAt(U"スタート", { 400,400 }, 200)) {
+				changeScene(
+					SceneFactory::Create<Game>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
+			if (SimpleGUI::ButtonAt(U"ルール", { 400,450 }, 200)) {
+				changeScene(
+					SceneFactory::Create<Rule>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
+			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
+				changeScene(
+					SceneFactory::Create<Master::Title>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
+		}
+		void draw() const override {
+			font(U"ライフゲーム").drawAt({ 400,180 });
+		}
+	};
+	class Rule :public Yeah::Scenes::IScene {
+		const Font font{ 100 };
+	public:
+		void update() override {
+			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
+				changeScene(
+					SceneFactory::Create<Title>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
+		}
+		void draw() const override {
+			font(U"ルールだよ！").drawAt({ 400,180 });
+		}
+	};
+	class Game :public Yeah::Scenes::IScene {
+		Grid<bool> cell_{ Size(30,30),false };
+		bool auto_ = false;
+	public:
+		void update() override {
+			for (const auto& p : step(cell_.size())) {
+				if (const auto& region = Region(p); region.leftPressed()) {
+					cell_[p] = true;
+				}
+				else if (region.rightPressed()) {
+					cell_[p] = false;
+				}
+			}
 
+			if (SimpleGUI::ButtonAt(U"次へ(N)", { 700,50 }, 160, not auto_) || ((not auto_) && KeyN.down())) {
+				next();
+			}
+			SimpleGUI::CheckBoxAt(auto_, U"オート(A)", { 700,100 }, 160);
+			auto_ ^= KeyA.down();
+			if (auto_) {
+				next();
+			}
+			if (SimpleGUI::ButtonAt(U"戻る(B)", { 700,550 }, 160) || KeyB.down()) {
+				undo(TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s));
+			}
+		}
+		void draw() const override {
+			for (const auto& p : step(cell_.size())) {
+				Region(p).draw(cell_[p] ? Palette::Yellow : Palette::Gray).drawFrame(1.0, Palette::Black);
+			}
+		}
+
+	private:
+		static RectF Region(const Point& p) {
+			return { p * 20,20 };
+		}
+
+		void next() {
+			Grid<int32> countAround(cell_.size(), 0);
+			for (const auto& p : step(cell_.size())) {
+				for (const auto& i : step(Point(-1, -1), Size(3, 3))) {
+					if (i.isZero()) {
+						continue;
+					}
+					countAround[p] += cell_.fetch(p + i, false);
+				}
+			}
+			Grid<bool> tmp(cell_.size());
+			for (const auto& p : step(cell_.size())) {
+				tmp[p] = (countAround[p] == 3) || (countAround[p] == 2 && cell_[p]);
+			}
+			cell_ = std::move(tmp);
+		}
+	};
 }
 
 /*各ファクトリの定義*/
