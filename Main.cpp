@@ -423,12 +423,12 @@ namespace Yeah {
 				before()->request_.resetOptional();
 			}
 
-			if (KeyU.down()) {
-				undo(TransitionFactory::Create<Transitions::AlphaFadeInOut>(0.4s, 0.4s));
-			}
-			if (KeyR.down()) {
-				redo(TransitionFactory::Create<Transitions::AlphaFadeInOut>(0.4s, 0.4s));
-			}
+			//if (KeyU.down()) {
+			//	undo(TransitionFactory::Create<Transitions::AlphaFadeInOut>(0.4s, 0.4s));
+			//}
+			//if (KeyR.down()) {
+			//	redo(TransitionFactory::Create<Transitions::AlphaFadeInOut>(0.4s, 0.4s));
+			//}
 
 			if (transition_) {
 				if (auto&& i = transition_->nextTransition(); i.has_value()) {
@@ -475,6 +475,11 @@ namespace ConwaysGameOfLife {
 	class Title;
 	class Game;
 }
+namespace BreakOut {
+	class Title;
+	class Game;
+	class Result;
+}
 namespace FindShape {
 	class Title;
 	class GameScene1;
@@ -501,11 +506,11 @@ namespace Master {
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
-			if (SimpleGUI::ButtonAt(U"", { 400,400 }, 200, false)) {
-				//changeScene(
-				//	SceneFactory::Create<FindShape::Title>(),
-				//	TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
-				//);
+			if (SimpleGUI::ButtonAt(U"ブロック崩し", { 400,400 }, 200)) {
+				changeScene(
+					SceneFactory::Create<BreakOut::Title>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
 			}
 			if (SimpleGUI::ButtonAt(U"供養ゲーム", { 400,450 }, 200)) {
 				changeScene(
@@ -665,6 +670,159 @@ namespace ConwaysGameOfLife {
 		void draw() const override {
 			const Transformer2D t(Mat3x2::Scale(20), true);
 			impl_.draw();
+		}
+	};
+}
+namespace BreakOut {
+	class Impl {	//ゲーム本体の実装
+		struct Block {
+			RectF region;
+			ColorF color;
+			int32 life;
+
+			void draw() const {
+				region.stretched(-1).draw(color);
+			}
+		};
+	public:
+		static constexpr Size block_size{ 40,20 };
+		static constexpr double ball_speed = 480.0;
+		Array<Block> blocks_;
+		Vec2 ball_vel_ = Vec2::Up(ball_speed);
+		Circle ball_{ 0,0,8 };
+		RectF paddle_{ 0,0,60,10 };
+		int32 score_ = 0;
+
+		bool hold = true;
+
+		Impl() {
+			for (const auto& i : step(Size(800 / block_size.x, 5))) {
+				blocks_ << Block{ RectF(i * block_size + Vec2(0,60),block_size), RandomColorF(), 1 };
+			}
+		}
+
+		bool update() {
+			paddle_.setCenter(Cursor::PosF().x, 500);
+
+			if (hold && MouseL.down()) {
+				hold = false;
+				ball_vel_ = Vec2::Up(ball_speed);
+			}
+
+			if (hold) {
+				ball_.setPos(Arg::bottomCenter = paddle_.topCenter());
+				ball_vel_ = Vec2::Zero();
+			}
+			else {
+				ball_.moveBy(ball_vel_ * Scene::DeltaTime());
+			}
+
+			for (auto i = begin(blocks_); i != end(blocks_); ++i) {
+				if (i->region.intersects(ball_)) {
+					if (i->region.right().intersects(ball_) || i->region.left().intersects(ball_)) {
+						ball_vel_.x *= -1;
+					}
+					if (i->region.top().intersects(ball_) || i->region.bottom().intersects(ball_)) {
+						ball_vel_.y *= -1;
+					}
+
+					if (--(i->life) <= 0) {
+						blocks_.erase(i);
+						++score_;
+					}
+					break;
+				}
+			}
+
+			if ((ball_.x < 0 && ball_vel_.x < 0) || (800 < ball_.x && ball_vel_.x > 0)) {
+				ball_vel_.x *= -1;
+			}
+			if (ball_.y < 0 && ball_vel_.y < 0) {
+				ball_vel_.y *= -1;
+			}
+			if (ball_vel_.y > 0 && paddle_.intersects(ball_)) {
+				ball_vel_ = Vec2((ball_.x - paddle_.center().x) * 10, -ball_vel_.y).setLength(ball_speed);
+			}
+
+			if (ball_.y > 600) {
+				return false;
+			}
+
+			return true;
+		}
+		void draw() const {
+			for (const auto& i : blocks_) {
+				i.draw();
+			}
+			ball_.draw();
+			paddle_.draw();
+		}
+	};
+
+	class Title :public Yeah::Scenes::IScene {
+		const Font font{ 100 };
+		Impl impl_;
+	public:
+		void update() override {
+			if (SimpleGUI::ButtonAt(U"スタート", { 400,400 }, 200)) {
+				changeScene(
+					SceneFactory::Create<Game>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
+			if (SimpleGUI::ButtonAt(U"戻る", { 400,450 }, 200)) {
+				changeScene(
+					SceneFactory::Create<Master::Title>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
+		}
+		void draw() const override {
+			{
+				const Transformer2D t(Mat3x2::Translate(0, 150).scaled(3, {400,150}));
+				const ScopedColorMul2D s(1.0, 0.1);
+				impl_.draw();
+			}
+			font(U"ブロック崩し").drawAt({ 400,180 }, Palette::White);
+		}
+	};
+	class Game :public Yeah::Scenes::IScene {
+		Impl impl_;
+	public:
+		void update() override {
+			if (not impl_.update()) {
+				changeScene(
+					SceneFactory::Create<Result>(impl_.score_),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
+		}
+		void draw() const override {
+			impl_.draw();
+		}
+	};
+	class Result :public Yeah::Scenes::IScene {
+		const Font font{ 100 };
+		int32 score_;
+	public:
+		Result(int32 score) :
+			score_(score) {}
+		void update() override {
+			if (SimpleGUI::ButtonAt(U"もう一度", { 400,450 }, 200)) {
+				changeScene(
+					SceneFactory::Create<Game>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
+			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
+				changeScene(
+					SceneFactory::Create<Title>(),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
+		}
+		void draw() const override {
+			font(U"スコア:{}"_fmt(score_)).drawAt({ 400,180 });
 		}
 	};
 }
