@@ -3,15 +3,42 @@
 #include<HamFramework.hpp>
 
 namespace Yeah {
+	class ISceneFactory;
+	template<typename T, typename...Args>
+	class SceneFactory;
 	namespace Scenes { class IScene; }
 	namespace Transitions { class ITransition; }
 	class SceneChanger;
 }
 
-class SceneFactory {
-public:
+namespace Yeah {
+	class ISceneFactory {
+	public:
+		virtual ~ISceneFactory() = default;
+		virtual std::unique_ptr<Yeah::Scenes::IScene> create() const = 0;
+	};
 	template<typename T, typename...Args>
-	static std::unique_ptr<Yeah::Scenes::IScene> Create(Args&&...args);
+	class SceneFactory :public ISceneFactory {
+		std::tuple<Args&&...> args_;
+	public:
+		SceneFactory(Args&&...args) :
+			args_(std::forward<Args>(args)...) {}
+		std::unique_ptr<Yeah::Scenes::IScene> create() const override {
+			return std::apply(
+				[](auto&&...args) {
+					return std::make_unique<T>(std::forward<decltype(args)>(args)...);
+				},
+				args_
+			);
+		}
+	};
+}
+class SceneFactoryFactory {
+public:
+	template<typename SceneT, typename...Args>
+	static std::unique_ptr<Yeah::ISceneFactory> Create(Args&&...args) {
+		return std::make_unique<Yeah::SceneFactory<SceneT, Args...>>(std::forward<Args>(args)...);
+	}
 };
 namespace Yeah {
 	namespace Scenes {
@@ -19,7 +46,7 @@ namespace Yeah {
 		class IScene {
 			friend class SceneChanger;
 
-			Optional<std::pair<std::unique_ptr<IScene>, std::unique_ptr<Transitions::ITransition>>> change_;
+			Optional<std::pair<std::unique_ptr<ISceneFactory>, std::unique_ptr<Transitions::ITransition>>> change_;
 			bool exit_ = false;
 			Optional<std::unique_ptr<Transitions::ITransition>> undo_;
 			Optional<std::unique_ptr<Transitions::ITransition>> redo_;
@@ -33,7 +60,7 @@ namespace Yeah {
 			virtual void drawFadeIn(double /*t*/) const { draw(); }
 			virtual void drawFadeOut(double /*t*/) const { draw(); }
 
-			void changeScene(std::unique_ptr<IScene>&& scene,
+			void changeScene(std::unique_ptr<ISceneFactory>&& scene,
 				std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
 				change_ = std::make_pair(std::move(scene), std::move(transition));
 			}
@@ -322,16 +349,18 @@ namespace Yeah {
 }
 
 namespace Yeah {
+
 	class SceneChanger {
-		Array<std::unique_ptr<Scenes::IScene>> scenes_;
-		Optional<int64> before_index_, after_index_;
+		Array<std::unique_ptr<ISceneFactory>> scene_factories_;
 		std::unique_ptr<Transitions::ITransition> transition_ = TransitionFactory::Create<Transitions::CrossFade>(1s);
+		Optional<int32> index_;
+		std::unique_ptr<Yeah::Scenes::IScene> before_, after_;
 	public:
 		SceneChanger() = default;
 		SceneChanger(
-			std::unique_ptr<Scenes::IScene>&& scene,
+			std::unique_ptr<ISceneFactory>&& scene_factory,
 			std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
-			change(std::move(scene), std::move(transition));
+			change(std::move(scene_factory), std::move(transition));
 		}
 
 		void setTransition(std::unique_ptr<Transitions::ITransition>&& transition) {
@@ -339,61 +368,71 @@ namespace Yeah {
 
 			transition_ = std::move(transition);
 		}
-		void change(std::unique_ptr<Scenes::IScene>&& next, std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
-			if (not next) { return; }
+		void change(std::unique_ptr<ISceneFactory>&& next_scene_factory, std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
+			if (not next_scene_factory) { return; }
 
-			if (after_index_) {
-				scenes_.dropBack(scenes_.size() - 1 - *after_index_);
+			if (index_) {
+				scene_factories_.dropBack(scene_factories_.size() - 1 - *index_);
 			}
 
-			scenes_ << std::move(next);
+			scene_factories_ << std::move(next_scene_factory);
 
-			before_index_ = after_index_;
-			if (after_index_) {
-				++(*after_index_);
-			}
-			else {
-				after_index_ = 0;
-			}
+			index_ = scene_factories_.size() - 1;
+			before_ = std::move(after_);
+			after_ = scene_factories_.back()->create();
 
 			setTransition(std::move(transition));
 		}
 		void redo(std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
-			if (not after_index_) { return; }
-			if (scenes_.size() <= *after_index_ + 1) { return; }
+			if (not index_) { return; }
+			if (scene_factories_.empty()) { return; }
+			if (scene_factories_.size() - 1 <= *index_) { return; }
 
-			before_index_ = after_index_;
-			++(*after_index_);
+			++(*index_);
+			before_ = std::move(after_);
+			if (scene_factories_[*index_]) {
+				after_ = scene_factories_[*index_]->create();
+			}
+			else {
+				after_.reset();
+			}
 
 			setTransition(std::move(transition));
 		}
 		void undo(std::unique_ptr<Transitions::ITransition>&& transition = nullptr) {
-			if (not after_index_) { return; }
-			if (*after_index_ <= 0) { return; }
+			if (not index_) { return; }
+			if (scene_factories_.empty()) { return; }
+			if (*index_ <= 0) { return; }
 
-			before_index_ = after_index_;
-			--(*after_index_);
+			--(*index_);
+			before_ = std::move(after_);
+			if (scene_factories_[*index_]) {
+				after_ = scene_factories_[*index_]->create();
+			}
+			else {
+				after_.reset();
+			}
 
 			setTransition(std::move(transition));
 		}
 
 		bool update() {
 			if (transition_) {
-				transition_->update(before(), after());
+				transition_->update(before_, after_);
 			}
 
-			if (after()) {
-				if (after()->change_) {
-					change(std::move(after()->change_->first), std::move(after()->change_->second));
-					after()->change_.reset();
+			if (after_) {
+				if (after_->change_) {
+					change(std::move(after_->change_->first), std::move(after_->change_->second));
+					after_->change_.reset();
 				}
-				if (after()->undo_) {
-					undo(std::move(*after()->undo_));
-					after()->undo_.reset();
+				if (after_->undo_) {
+					undo(std::move(*after_->undo_));
+					after_->undo_.reset();
 				}
-				if (after()->redo_) {
-					redo(std::move(*after()->redo_));
-					after()->redo_.reset();
+				if (after_->redo_) {
+					redo(std::move(*after_->redo_));
+					after_->redo_.reset();
 				}
 			}
 
@@ -410,38 +449,19 @@ namespace Yeah {
 				}
 			}
 
-			return after() ? not after()->exit_ : true;
+			return after_ ? not after_->exit_ : true;
 		}
 		void draw() const {
 			if (transition_) {
-				transition_->draw(before(), after());
+				transition_->draw(before_, after_);
 			}
 
 			Logger << U"Transition:" << (transition_ ? Unicode::Widen(typeid(*transition_).name()) : U"Null");
 			Print << U"Transition:" << (transition_ ? Unicode::Widen(typeid(*transition_).name()) : U"Null");
-			Print << U"Before:" << (before() ? Unicode::Widen(typeid(*before()).name()) : U"Null");
-			Print << U"After:" << (after() ? Unicode::Widen(typeid(*after()).name()) : U"Null");
-			Print << U"SceneNum:" << scenes_.size();
-			Print << U"BeforeIndex:" << (before_index_ ? U"{}"_fmt(*before_index_) : U"Null");
-			Print << U"AfterIndex:" << (after_index_ ? U"{}"_fmt(*after_index_) : U"Null");
-		}
-
-	private:
-		std::unique_ptr<Yeah::Scenes::IScene>& before() {
-			static std::unique_ptr<Yeah::Scenes::IScene> nul{ nullptr };
-			return before_index_ ? scenes_[*before_index_] : nul;
-		}
-		const std::unique_ptr<Yeah::Scenes::IScene>& before() const {
-			static std::unique_ptr<Yeah::Scenes::IScene> nul{ nullptr };
-			return before_index_ ? scenes_[*before_index_] : nul;
-		}
-		std::unique_ptr<Yeah::Scenes::IScene>& after() {
-			static std::unique_ptr<Yeah::Scenes::IScene> nul{ nullptr };
-			return after_index_ ? scenes_[*after_index_] : nul;
-		}
-		const std::unique_ptr<Yeah::Scenes::IScene>& after() const {
-			static std::unique_ptr<Yeah::Scenes::IScene> nul{ nullptr };
-			return after_index_ ? scenes_[*after_index_] : nul;
+			Print << U"Before:" << (before_ ? Unicode::Widen(typeid(*before_).name()) : U"Null");
+			Print << U"After:" << (after_ ? Unicode::Widen(typeid(*after_).name()) : U"Null");
+			Print << U"SceneNum:" << scene_factories_.size();
+			Print << U"Index:" << (index_ ? U"{}"_fmt(*index_) : U"Null");
 		}
 	};
 }
@@ -469,21 +489,21 @@ namespace Master {
 		void update() override {
 			if (SimpleGUI::ButtonAt(U"図形探し", { 400,350 }, 200)) {
 				changeScene(
-					SceneFactory::Create<FindShape::Title>(),
+					SceneFactoryFactory::Create<FindShape::Title>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"クソゲー2", { 400,400 }, 200)) {
 				changeScene(
-					SceneFactory::Create<CountFace::Title>(),
+					SceneFactoryFactory::Create<CountFace::Title>(std::make_unique<int>(2)),
 					TransitionFactory::Create<Yeah::Transitions::CustomFadeInOut<Yeah::Transitions::AlphaFadeOut, Yeah::Transitions::AlphaFadeIn>>(0.4s, 0.4s)
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"クソゲー3", { 400,450 }, 200)) {
-				changeScene(
-					SceneFactory::Create<CountFace::Title>(),
-					TransitionFactory::Create<Yeah::Transitions::CustomCrossFade<Yeah::Transitions::AlphaFadeOut, Yeah::Transitions::AlphaFadeIn>>(0.8s)
-				);
+				//changeScene(
+				//	SceneFactoryFactory::Create<CountFace::Title>(),
+				//	TransitionFactory::Create<Yeah::Transitions::CustomCrossFade<Yeah::Transitions::AlphaFadeOut, Yeah::Transitions::AlphaFadeIn>>(0.8s)
+				//);
 			}
 			if (SimpleGUI::ButtonAt(U"終了", { 400,500 }, 200)) {
 				exit();
@@ -501,25 +521,25 @@ namespace FindShape {
 		void update() override {
 			if (SimpleGUI::ButtonAt(U"イージー", { 400,350 }, 200)) {
 				changeScene(
-					SceneFactory::Create<GameScene1>(50),
+					SceneFactoryFactory::Create<GameScene1>(50),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"ノーマル", { 400,400 }, 200)) {
 				changeScene(
-					SceneFactory::Create<GameScene1>(100),
+					SceneFactoryFactory::Create<GameScene1>(100),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"ハード", { 400,450 }, 200)) {
 				changeScene(
-					SceneFactory::Create<GameScene1>(200),
+					SceneFactoryFactory::Create<GameScene1>(200),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
 				changeScene(
-					SceneFactory::Create<Master::Title>(),
+					SceneFactoryFactory::Create<Master::Title>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
@@ -580,7 +600,7 @@ namespace FindShape {
 		void update() override {
 			if (timer.reachedZero()) {
 				changeScene(
-					SceneFactory::Create<GameScene2>(),
+					SceneFactoryFactory::Create<GameScene2>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.1s, 0.1s)
 				);
 			}
@@ -608,7 +628,7 @@ namespace FindShape {
 				if (grab_index && MouseL.up()) {
 					if (not hold_index) {
 						changeScene(
-							SceneFactory::Create<Result>(*grab_index == target_index),
+							SceneFactoryFactory::Create<Result>(*grab_index == target_index),
 							TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 						);
 					}
@@ -645,13 +665,13 @@ namespace FindShape {
 		void update() override {
 			if (SimpleGUI::ButtonAt(U"答え", { 400,400 }, 200)) {
 				changeScene(
-					SceneFactory::Create<Answer>(),
+					SceneFactoryFactory::Create<Answer>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"戻る", { 400,450 }, 200)) {
 				changeScene(
-					SceneFactory::Create<Title>(),
+					SceneFactoryFactory::Create<Title>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
@@ -690,28 +710,17 @@ namespace CountFace {
 	class Title :public Yeah::Scenes::IScene {
 		const Font font{ 100 };
 	public:
+		Title(std::unique_ptr<int>&& a) { Logger << *a; }
 		void update() override {
 			if (SimpleGUI::ButtonAt(U"イージー", { 400,350 }, 200)) {
-				//changeScene(
-				//	sceneFuctory.create(U"CountFaceRule"),
-				//	std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
-				//);
 			}
 			if (SimpleGUI::ButtonAt(U"ノーマル", { 400,400 }, 200)) {
-				//changeScene(
-				//	sceneFuctory.create(U"FindShapeGameScene1"),
-				//	std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
-				//);
 			}
 			if (SimpleGUI::ButtonAt(U"ハード", { 400,450 }, 200)) {
-				//changeScene(
-				//	sceneFuctory.create(U"FindShapeGameScene1"),
-				//	std::make_unique<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
-				//);
 			}
 			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
 				changeScene(
-					SceneFactory::Create<Master::Title>(),
+					SceneFactoryFactory::Create<Master::Title>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
@@ -737,22 +746,20 @@ namespace ConwaysGameOfLife {
 
 }
 
-/*各ファクトリの定義*/
-template<typename T, typename...Args>
-std::unique_ptr<Yeah::Scenes::IScene> SceneFactory::Create(Args&&...args) {
-	return std::make_unique<T>(std::forward<Args>(args)...);
-}
+/*ファクトリの定義*/
 template<typename T, typename...Args>
 std::unique_ptr<Yeah::Transitions::ITransition> TransitionFactory::Create(Args&&...args) {
 	return std::make_unique<T>(std::forward<Args>(args)...);
 }
 
 void Main() {
+	std::tuple<std::unique_ptr<int>&&> p(std::make_unique<int>(9));
+	auto&& q = std::move(std::get<0>(p));
 	Window::SetPos({ 1000,200 });
 	Scene::SetBackground(ColorF(0.2, 0.3, 0.4));
 	
 	Yeah::SceneChanger sc(
-		SceneFactory::Create<Master::Title>(),
+		SceneFactoryFactory::Create<Master::Title>(),
 		TransitionFactory::Create<Yeah::Transitions::AlphaFadeIn>(1s)
 	);
 	while (System::Update()) {
