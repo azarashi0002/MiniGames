@@ -478,6 +478,7 @@ namespace ConwaysGameOfLife {
 namespace BreakOut {
 	class Title;
 	class Game;
+	class Game2;
 	class Result;
 }
 namespace FindShape {
@@ -675,6 +676,7 @@ namespace ConwaysGameOfLife {
 }
 namespace BreakOut {
 	class Impl {	//ゲーム本体の実装
+	public:
 		struct Block {
 			RectF region;
 			ColorF color;
@@ -684,29 +686,34 @@ namespace BreakOut {
 				region.stretched(-1).draw(color);
 			}
 		};
-	public:
-		static constexpr Size block_size{ 40,20 };
-		static constexpr double ball_speed = 480.0;
+		Size block_size_{ 40,25 };
+		Size blocks_num_{ 16,7 };
+		static constexpr Point blocks_center{ 400,150 };
+		double ball_speed = 400.0;
 		Array<Block> blocks_;
-		Vec2 ball_vel_ = Vec2::Up(ball_speed);
+		Vec2 ball_vel_ = Vec2::Zero();
 		Circle ball_{ 0,0,8 };
 		RectF paddle_{ 0,0,60,10 };
 		int32 score_ = 0;
+		Stopwatch sw;
 
 		bool hold = true;
 
-		Impl() {
-			for (const auto& i : step(Size(800 / block_size.x, 5))) {
-				blocks_ << Block{ RectF(i * block_size + Vec2(0,60),block_size), RandomColorF(), 1 };
+		Impl(const Size& block_size, const Size& blocks_num):
+			block_size_(block_size),
+			blocks_num_(blocks_num) {
+			for (const auto& i : step(blocks_num_)) {
+				blocks_ << Block{ RectF(Arg::center = blocks_center - (i - (blocks_num_ - Vec2::One()) / 2.0) * block_size_,block_size_),RandomColorF(),1 };
 			}
 		}
 
 		bool update() {
-			paddle_.setCenter(Cursor::PosF().x, 500);
+			paddle_.setPos(Arg::center = Vec2{ Cursor::PosF().x, 500 });
 
 			if (hold && MouseL.down()) {
 				hold = false;
 				ball_vel_ = Vec2::Up(ball_speed);
+				sw.start();
 			}
 
 			if (hold) {
@@ -729,6 +736,7 @@ namespace BreakOut {
 					if (--(i->life) <= 0) {
 						blocks_.erase(i);
 						++score_;
+						ball_speed += 5;
 					}
 					break;
 				}
@@ -744,7 +752,12 @@ namespace BreakOut {
 				ball_vel_ = Vec2((ball_.x - paddle_.center().x) * 10, -ball_vel_.y).setLength(ball_speed);
 			}
 
+			ball_vel_.setLength(ball_speed);
+
 			if (ball_.y > 600) {
+				return false;
+			}
+			if (blocks_.empty()) {
 				return false;
 			}
 
@@ -761,14 +774,23 @@ namespace BreakOut {
 
 	class Title :public Yeah::Scenes::IScene {
 		const Font font{ 100 };
-		Impl impl_;
+		Impl impl_{ {40,25},{16,7} };
 	public:
 		void update() override {
-			if (SimpleGUI::ButtonAt(U"スタート", { 400,400 }, 200)) {
+			if (SimpleGUI::ButtonAt(U"スタート", { 400,350 }, 200)) {
 				changeScene(
 					SceneFactory::Create<Game>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
+			}
+			{
+				const ScopedColorMul2D s(1.0, 0.0);
+				if (SimpleGUI::ButtonAt(U"ハード", { 400,400 }, 200)) {
+					changeScene(
+						SceneFactory::Create<Game2>(),
+						TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+					);
+				}
 			}
 			if (SimpleGUI::ButtonAt(U"戻る", { 400,450 }, 200)) {
 				changeScene(
@@ -787,12 +809,12 @@ namespace BreakOut {
 		}
 	};
 	class Game :public Yeah::Scenes::IScene {
-		Impl impl_;
+		Impl impl_{ {40,25},{16,7} };
 	public:
 		void update() override {
 			if (not impl_.update()) {
 				changeScene(
-					SceneFactory::Create<Result>(impl_.score_),
+					SceneFactory::Create<Result>(impl_.score_, impl_.sw.elapsed(), SceneFactory::Create<Game>),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
@@ -801,16 +823,36 @@ namespace BreakOut {
 			impl_.draw();
 		}
 	};
+	class Game2 :public Yeah::Scenes::IScene {
+		Impl impl_{ {20,10},{35,20} };
+	public:
+		void update() override {
+			if (not impl_.update()) {
+				changeScene(
+					SceneFactory::Create<Result>(impl_.score_, impl_.sw.elapsed(), SceneFactory::Create<Game2>),
+					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+				);
+			}
+		}
+		void draw() const override {
+			impl_.draw();
+		}
+	};
+
 	class Result :public Yeah::Scenes::IScene {
 		const Font font{ 100 };
 		int32 score_;
+		Duration duration_;
+		std::unique_ptr<Yeah::Scenes::IScene>(*factory_)();
 	public:
-		Result(int32 score) :
-			score_(score) {}
+		Result(int32 score, const Duration& duration, std::unique_ptr<Yeah::Scenes::IScene>(*factory)()) :
+			score_(score),
+			duration_(duration),
+			factory_(factory) {}
 		void update() override {
 			if (SimpleGUI::ButtonAt(U"もう一度", { 400,450 }, 200)) {
 				changeScene(
-					SceneFactory::Create<Game>(),
+					factory_(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
@@ -823,6 +865,7 @@ namespace BreakOut {
 		}
 		void draw() const override {
 			font(U"スコア:{}"_fmt(score_)).drawAt({ 400,180 });
+			font(U"タイム:{:.2f}s"_fmt(duration_.count())).drawAt({ 400,300 });
 		}
 	};
 }
@@ -1138,6 +1181,7 @@ namespace TenSecondsTimer {
 				}
 				break;
 			case State::Time:
+			case State::Finish:
 				if (SimpleGUI::ButtonAt(U"ストップ！", { 400,300 }, 200)) {
 					state = State::Finish;
 					changeScene(
@@ -1145,9 +1189,6 @@ namespace TenSecondsTimer {
 						TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 					);
 				}
-				break;
-			case State::Finish:
-				SimpleGUI::ButtonAt(U"ストップ！", { 400,300 }, 200, false);
 				break;
 			}
 		}
@@ -1201,7 +1242,7 @@ std::unique_ptr<Yeah::Transitions::ITransition> TransitionFactory::Create(Args&&
 
 void Main() {
 	Profiler::EnableAssetCreationWarning(false);
-	
+
 	Window::SetTitle(U"MiniGames");
 	Window::SetPos({ 1000,200 });
 	Scene::SetBackground(ColorF(0.2, 0.3, 0.4));
