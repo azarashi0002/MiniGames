@@ -503,7 +503,6 @@ namespace Master {
 				changeScene(
 					SceneFactory::Create<ConwaysGameOfLife::Title>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
-					//TransitionFactory::Create<Yeah::Transitions::Iris<Circle>>(0.4s, 0.4s)
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"ブロック崩し", { 400,400 }, 200)) {
@@ -512,7 +511,7 @@ namespace Master {
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
 				);
 			}
-			if (SimpleGUI::ButtonAt(U"供養ゲーム", { 400,450 }, 200)) {
+			if (SimpleGUI::ButtonAt(U"次へ", { 400,450 }, 200)) {
 				changeScene(
 					SceneFactory::Create<Second::Title>(),
 					TransitionFactory::Create<Yeah::Transitions::CustomFadeInOut<Yeah::Transitions::AlphaFadeOut, Yeah::Transitions::AlphaFadeIn>>(0.4s, 0.4s)
