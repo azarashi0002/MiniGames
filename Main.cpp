@@ -77,7 +77,7 @@ namespace Yeah {
 			virtual Optional<std::unique_ptr<ITransition>> nextTransition() const = 0;
 		};
 
-		class Step :public ITransition {
+		class Cut :public ITransition {
 		public:
 			void update([[maybe_unused]] const std::unique_ptr<Scenes::IScene>& before,
 				const std::unique_ptr<Scenes::IScene>& after) override {
@@ -119,7 +119,7 @@ namespace Yeah {
 
 			Optional<std::unique_ptr<ITransition>> nextTransition() const override {
 				if (timer.reachedZero()) {
-					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Step>());
+					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Cut>());
 				}
 				else {
 					return none;
@@ -149,7 +149,7 @@ namespace Yeah {
 
 			Optional<std::unique_ptr<ITransition>> nextTransition() const override {
 				if (timer.reachedZero()) {
-					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Step>());
+					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Cut>());
 				}
 				else {
 					return none;
@@ -198,7 +198,7 @@ namespace Yeah {
 
 			Optional<std::unique_ptr<ITransition>> nextTransition() const override {
 				if (timer.reachedZero()) {
-					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Step>());
+					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Cut>());
 				}
 				else {
 					return none;
@@ -236,7 +236,7 @@ namespace Yeah {
 
 			Optional<std::unique_ptr<ITransition>> nextTransition() const override {
 				if (timer.reachedZero()) {
-					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Step>());
+					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Cut>());
 				}
 				else {
 					return none;
@@ -288,7 +288,7 @@ namespace Yeah {
 
 			Optional<std::unique_ptr<ITransition>> nextTransition() const override {
 				if (timer.reachedZero()) {
-					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Step>());
+					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Cut>());
 				}
 				else {
 					return none;
@@ -319,13 +319,14 @@ namespace Yeah {
 
 			Optional<std::unique_ptr<ITransition>> nextTransition() const override {
 				if (timer.reachedZero()) {
-					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Step>());
+					return Optional<std::unique_ptr<ITransition>>(TransitionFactory::Create<Transitions::Cut>());
 				}
 				else {
 					return none;
 				}
 			}
 		};
+
 	}
 }
 
@@ -423,20 +424,13 @@ namespace Yeah {
 				before()->request_.resetOptional();
 			}
 
-			//if (KeyU.down()) {
-			//	undo(TransitionFactory::Create<Transitions::AlphaFadeInOut>(0.4s, 0.4s));
-			//}
-			//if (KeyR.down()) {
-			//	redo(TransitionFactory::Create<Transitions::AlphaFadeInOut>(0.4s, 0.4s));
-			//}
-
 			if (transition_) {
 				if (auto&& i = transition_->nextTransition(); i.has_value()) {
 					setTransition(std::move(*i));
 				}
 			}
 
-			return after() ? not after()->request_.exit_ : true;
+			return after() ? not std::exchange(after()->request_.exit_, false) : true;
 		}
 		void draw() const {
 			if (transition_) {
@@ -494,6 +488,10 @@ namespace TenSecondsTimer {
 	class Game;
 	class Result;
 }
+namespace MineSweeper {
+	class Title;
+	class Game;
+}
 
 /*シーン実装*/
 namespace Master {
@@ -505,6 +503,7 @@ namespace Master {
 				changeScene(
 					SceneFactory::Create<ConwaysGameOfLife::Title>(),
 					TransitionFactory::Create<Yeah::Transitions::AlphaFadeInOut>(0.4s, 0.4s)
+					//TransitionFactory::Create<Yeah::Transitions::Iris<Circle>>(0.4s, 0.4s)
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"ブロック崩し", { 400,400 }, 200)) {
@@ -546,6 +545,7 @@ namespace Second {
 				);
 			}
 			if (SimpleGUI::ButtonAt(U"", { 400,450 }, 200, false)) {
+				
 			}
 			if (SimpleGUI::ButtonAt(U"戻る", { 400,500 }, 200)) {
 				changeScene(
